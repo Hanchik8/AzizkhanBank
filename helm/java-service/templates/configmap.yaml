@@ -1,0 +1,12 @@
+{{- if .Values.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "java-service.fullname" . }}-config
+  labels:
+    {{- include "java-service.labels" . | nindent 4 }}
+data:
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ tpl ($v | toString) $ | quote }}
+  {{- end }}
+{{- end }}

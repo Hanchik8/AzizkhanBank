@@ -1,0 +1,83 @@
+fullnameOverride: notification-service
+
+image:
+  repository: us-central1-docker.pkg.dev/PROJECT_ID/banking-services/notification-service
+  tag: "REPLACE_WITH_SHA"
+  digest: ""
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: notification-service@PROJECT_ID.iam.gserviceaccount.com
+
+service:
+  enabled: false
+
+containerPort: 8080
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+probes:
+  liveness:
+    enabled: true
+    path: /actuator/health/liveness
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    path: /actuator/health/readiness
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+env:
+  - name: SPRING_APPLICATION_NAME
+    value: notification-service
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+    value: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+  - name: SPRING_KAFKA_CONSUMER_GROUP_ID
+    value: notification-service-v1
+  - name: BANKING_KAFKA_TOPICS_ACCOUNT_EVENTS
+    value: account.events.v1
+  - name: SMTP_HOST
+    value: smtp.internal.svc.cluster.local
+  - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+    value: http://otel-collector.observability.svc.cluster.local:4318/v1/traces
+  - name: GCP_PROJECT_ID
+    value: PROJECT_ID
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+networkPolicy:
+  enabled: true
+  allowInternetEgress: false
+  extraEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: notifications
+      ports:
+        - protocol: TCP
+          port: 25

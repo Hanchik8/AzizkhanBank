@@ -1,0 +1,119 @@
+name: build-and-push
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "services/**"
+      - ".github/workflows/build-and-push.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "services/**"
+      - ".github/workflows/build-and-push.yml"
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: "21"
+  GAR_REGION: "us-central1"
+  GAR_REPOSITORY: "banking-services"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run unit tests
+        run: ./gradlew test
+
+  build-push:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - user-service
+          - account-service
+          - notification-service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build service JAR
+        run: ./gradlew :services:${{ matrix.service }}:bootJar
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_CICD_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GAR_REGION }}-docker.pkg.dev --quiet
+
+      - name: Compute image tags
+        id: meta
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::12}"
+          IMAGE="${{ env.GAR_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ matrix.service }}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f services/${{ matrix.service }}/Dockerfile \
+            -t ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }} \
+            -t ${{ steps.meta.outputs.image }}:latest \
+            services/${{ matrix.service }}
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }}
+          docker push ${{ steps.meta.outputs.image }}:latest
+
+      - name: Generate image digest artifact
+        shell: bash
+        run: |
+          docker inspect --format='{{index .RepoDigests 0}}' ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }} \
+            > digest-${{ matrix.service }}.txt
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.service }}
+          path: digest-${{ matrix.service }}.txt
+
+  # Optional CD step:
+  # - Commit updated image tags into gitops/helm-values/*.yaml
+  # - ArgoCD auto-sync deploys after merge to main

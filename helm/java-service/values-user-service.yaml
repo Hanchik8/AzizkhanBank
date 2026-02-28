@@ -1,0 +1,73 @@
+fullnameOverride: user-service
+
+image:
+  repository: us-central1-docker.pkg.dev/PROJECT_ID/banking-services/user-service
+  tag: "REPLACE_WITH_SHA"
+  digest: ""
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: user-service@PROJECT_ID.iam.gserviceaccount.com
+
+service:
+  enabled: true
+  port: 8080
+  targetPort: 8080
+
+containerPort: 8080
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 75
+
+ingress:
+  enabled: true
+  className: "gce"
+  annotations:
+    kubernetes.io/ingress.allow-http: "false"
+    kubernetes.io/ingress.global-static-ip-name: bank-api-ip
+    networking.gke.io/managed-certificates: bank-api-cert
+  hosts:
+    - host: api.bank.example.com
+      paths:
+        - path: /users
+          pathType: Prefix
+
+env:
+  - name: SPRING_APPLICATION_NAME
+    value: user-service
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: SERVER_PORT
+    value: "8080"
+  - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+    value: health,info,prometheus
+  - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
+    value: http://keycloak.keycloak.svc.cluster.local/realms/banking
+  - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+    value: http://otel-collector.observability.svc.cluster.local:4318/v1/traces
+  - name: GCP_PROJECT_ID
+    value: PROJECT_ID
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+networkPolicy:
+  enabled: true
+  allowInternetEgress: false
+  extraEgress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080

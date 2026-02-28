@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0001-core-ledger-schema
+      author: platform
+      changes:
+        - sqlFile:
+            dbms: postgresql
+            encoding: UTF-8
+            path: 0001-core-ledger-schema.sql
+            relativeToChangelogFile: true

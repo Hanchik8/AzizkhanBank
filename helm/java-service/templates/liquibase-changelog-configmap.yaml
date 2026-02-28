@@ -1,0 +1,22 @@
+{{- if and .Values.migrations.enabled .Values.migrations.changelog.enabled .Values.migrations.changelog.filesGlob }}
+{{- $glob := .Values.migrations.changelog.filesGlob -}}
+{{- $files := .Files.Glob $glob -}}
+{{- if eq (len $files) 0 }}
+{{- fail (printf "No Liquibase changelog files matched glob: %s" $glob) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ default (printf "%s-liquibase-changelog" (include "java-service.fullname" .)) .Values.migrations.changelog.configMapName }}
+  labels:
+    {{- include "java-service.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  {{- range $path, $_ := $files }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}

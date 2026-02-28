@@ -1,0 +1,121 @@
+fullnameOverride: account-service
+
+image:
+  repository: us-central1-docker.pkg.dev/PROJECT_ID/banking-services/account-service
+  tag: "REPLACE_WITH_SHA"
+  digest: ""
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: account-service@PROJECT_ID.iam.gserviceaccount.com
+
+service:
+  enabled: true
+  port: 8080
+  targetPort: 8080
+
+containerPort: 8080
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 75
+
+env:
+  - name: SPRING_APPLICATION_NAME
+    value: account-service
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: SERVER_PORT
+    value: "8080"
+  - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+    value: health,info,prometheus
+  - name: GCP_PROJECT_ID
+    value: PROJECT_ID
+  - name: SPRING_DATASOURCE_URL
+    value: jdbc:postgresql://10.40.0.10:5432/core_ledger
+  - name: SPRING_DATASOURCE_USERNAME
+    valueFrom:
+      secretKeyRef:
+        name: postgres-app-credentials
+        key: username
+  - name: SPRING_DATASOURCE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: postgres-app-credentials
+        key: password
+  - name: SPRING_DATA_REDIS_HOST
+    value: 10.50.0.10
+  - name: SPRING_DATA_REDIS_PORT
+    value: "6379"
+  - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
+    value: my-cluster-kafka-bootstrap.kafka.svc.cluster.local:9092
+  - name: SPRING_KAFKA_PRODUCER_TRANSACTION_ID_PREFIX
+    value: account-service-tx-
+  - name: BANKING_KAFKA_TOPICS_ACCOUNT_EVENTS
+    value: account.events.v1
+  - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
+    value: http://otel-collector.observability.svc.cluster.local:4318/v1/traces
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "768Mi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+networkPolicy:
+  enabled: true
+  allowInternetEgress: false
+  extraEgress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 9092
+
+migrations:
+  enabled: true
+  image:
+    # Custom Liquibase image should bundle the PostgreSQL JDBC driver.
+    repository: us-central1-docker.pkg.dev/PROJECT_ID/platform-images/liquibase-postgres
+    tag: "4.29.2"
+    pullPolicy: IfNotPresent
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  args:
+    - "--search-path=/liquibase/changelog"
+    - "--changelog-file=/liquibase/changelog/db.changelog-master.yaml"
+    - "update"
+  env:
+    - name: LIQUIBASE_COMMAND_URL
+      value: jdbc:postgresql://10.40.0.10:5432/core_ledger
+    - name: LIQUIBASE_COMMAND_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: postgres-app-credentials
+          key: username
+    - name: LIQUIBASE_COMMAND_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: postgres-app-credentials
+          key: password
+    - name: LIQUIBASE_COMMAND_DEFAULT_SCHEMA_NAME
+      value: public
+    - name: LIQUIBASE_COMMAND_DRIVER
+      value: org.postgresql.Driver
+    - name: LIQUIBASE_LOG_LEVEL
+      value: info
+  changelog:
+    enabled: true
+    filesGlob: files/liquibase/account-service/*
+    mountPath: /liquibase/changelog

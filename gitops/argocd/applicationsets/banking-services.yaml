@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: banking-services
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - list:
+        elements:
+          - appName: user-service
+            releaseName: user-service
+            namespace: banking
+            valuesFile: values-user-service.yaml
+          - appName: account-service
+            releaseName: account-service
+            namespace: banking
+            valuesFile: values-account-service.yaml
+          - appName: notification-service
+            releaseName: notification-service
+            namespace: banking
+            valuesFile: values-notification-service.yaml
+  template:
+    metadata:
+      name: "{{ .appName }}"
+      namespace: argocd
+      labels:
+        app.kubernetes.io/part-of: banking-platform
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/YOUR_ORG/azizkhan-bank-gitops.git
+        targetRevision: main
+        path: helm/java-service
+        helm:
+          releaseName: "{{ .releaseName }}"
+          valueFiles:
+            - "{{ .valuesFile }}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .namespace }}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+          - ApplyOutOfSyncOnly=true
+          - PruneLast=true
+      revisionHistoryLimit: 5

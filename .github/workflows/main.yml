@@ -1,0 +1,233 @@
+name: main
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "services/**"
+      - ".github/workflows/main.yml"
+      - "helm/java-service/**"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "services/**"
+      - ".github/workflows/main.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  JAVA_VERSION: "21"
+  GCP_PROJECT_ID: "${{ secrets.GCP_PROJECT_ID }}"
+  GAR_REGION: "us-central1"
+  GAR_REPOSITORY: "banking-services"
+  GITOPS_REPO_HELM_PATH: "helm/java-service"
+
+jobs:
+  build-test:
+    name: Build & Test (${{ matrix.service.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: user-service
+            module: services/user-service
+          - name: account-service
+            module: services/account-service
+          - name: notification-service
+            module: services/notification-service
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Run Maven tests
+        run: mvn -B -ntp -f ${{ matrix.service.module }}/pom.xml clean verify
+
+  build-push-images:
+    name: Build & Push Images (${{ matrix.service.name }})
+    if: github.event_name != 'pull_request'
+    needs: build-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: user-service
+            module: services/user-service
+          - name: account-service
+            module: services/account-service
+          - name: notification-service
+            module: services/notification-service
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Package Spring Boot application
+        run: mvn -B -ntp -DskipTests -f ${{ matrix.service.module }}/pom.xml package
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_GITHUB_ACTIONS_SA_EMAIL }}
+
+      - name: Set up gcloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker to use Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GAR_REGION }}-docker.pkg.dev --quiet
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::12}"
+          IMAGE="${GAR_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/${{ matrix.service.name }}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag_ref=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build container image
+        run: |
+          docker build \
+            --file "${{ matrix.service.module }}/Dockerfile" \
+            --tag "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }}" \
+            --tag "${{ steps.meta.outputs.image }}:latest" \
+            "${{ matrix.service.module }}"
+
+      - name: Push image tags to GAR
+        run: |
+          docker push "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }}"
+          docker push "${{ steps.meta.outputs.image }}:latest"
+
+      - name: Capture pushed digest
+        id: digest
+        shell: bash
+        run: |
+          DIGEST_FULL="$(docker inspect --format='{{index .RepoDigests 0}}' "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }}")"
+          DIGEST_HASH="${DIGEST_FULL##*@}"
+          echo "digest_full=${DIGEST_FULL}" >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST_HASH}" >> "$GITHUB_OUTPUT"
+          cat > "image-metadata-${{ matrix.service.name }}.json" <<JSON
+          {
+            "service": "${{ matrix.service.name }}",
+            "image": "${{ steps.meta.outputs.image }}",
+            "tag": "${{ steps.meta.outputs.tag_sha }}",
+            "digest": "${DIGEST_HASH}",
+            "digest_full": "${DIGEST_FULL}"
+          }
+          JSON
+
+      - name: Upload image digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-metadata-${{ matrix.service.name }}
+          path: image-metadata-${{ matrix.service.name }}.json
+
+  promote-gitops:
+    name: Update GitOps Helm Values (PR)
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build-push-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download image metadata artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: image-metadata-*
+          merge-multiple: true
+          path: image-metadata
+
+      - name: Checkout GitOps repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.GITOPS_REPO }}
+          ref: main
+          token: ${{ secrets.GITOPS_REPO_TOKEN }}
+          path: gitops-repo
+
+      - name: Install yq
+        shell: bash
+        run: |
+          YQ_VERSION="v4.44.6"
+          sudo wget -q -O /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Update Helm image tags and digests
+        shell: bash
+        env:
+          HELM_PATH: ${{ env.GITOPS_REPO_HELM_PATH }}
+        run: |
+          shopt -s nullglob
+          files=(image-metadata/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No image metadata artifacts found"
+            exit 1
+          fi
+
+          for metadata in "${files[@]}"; do
+            SERVICE="$(jq -r '.service' "$metadata")"
+            IMAGE_REPO="$(jq -r '.image' "$metadata")"
+            IMAGE_TAG="$(jq -r '.tag' "$metadata")"
+            IMAGE_DIGEST="$(jq -r '.digest' "$metadata")"
+
+            VALUES_FILE="gitops-repo/${HELM_PATH}/values-${SERVICE}.yaml"
+            if [ ! -f "$VALUES_FILE" ]; then
+              echo "Expected values file not found: $VALUES_FILE"
+              exit 1
+            fi
+
+            export IMAGE_REPO IMAGE_TAG IMAGE_DIGEST
+            yq -i '.image.repository = strenv(IMAGE_REPO)' "$VALUES_FILE"
+            yq -i '.image.tag = strenv(IMAGE_TAG)' "$VALUES_FILE"
+            yq -i '.image.digest = strenv(IMAGE_DIGEST)' "$VALUES_FILE"
+
+            echo "Updated $VALUES_FILE -> tag=$IMAGE_TAG digest=$IMAGE_DIGEST"
+          done
+
+      - name: Create GitOps promotion pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITOPS_REPO_TOKEN }}
+          path: gitops-repo
+          commit-message: "chore(images): promote banking services for ${{ github.sha }}"
+          title: "chore(images): promote banking services `${{ github.sha }}`"
+          body: |
+            Automated image promotion from application CI.
+
+            Source commit: `${{ github.sha }}`
+            Workflow: `${{ github.workflow }}`
+            Run: `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+
+            Updated Helm values for:
+            - user-service
+            - account-service
+            - notification-service
+          branch: "chore/promote-banking-images-${{ github.run_number }}"
+          base: main
+          labels: |
+            automation
+            gitops
+          add-paths: |
+            ${{ env.GITOPS_REPO_HELM_PATH }}/values-user-service.yaml
+            ${{ env.GITOPS_REPO_HELM_PATH }}/values-account-service.yaml
+            ${{ env.GITOPS_REPO_HELM_PATH }}/values-notification-service.yaml

@@ -1,0 +1,73 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "java-service.fullname" . }}-liquibase
+  labels:
+    {{- include "java-service.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- with .Values.migrations.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrations.ttlSecondsAfterFinished }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "java-service.selectorLabels" . | nindent 8 }}
+        job-type: db-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ default (include "java-service.serviceAccountName" .) .Values.migrations.serviceAccountName }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: liquibase
+          image: "{{ .Values.migrations.image.repository }}:{{ .Values.migrations.image.tag }}"
+          imagePullPolicy: {{ .Values.migrations.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- with .Values.migrations.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.migrations.env }}
+          env:
+            {{- range . }}
+            - name: {{ .name }}
+              {{- if hasKey . "value" }}
+              value: {{ tpl (.value | toString) $ | quote }}
+              {{- else if hasKey . "valueFrom" }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.migrations.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          {{- if .Values.migrations.changelog.enabled }}
+          volumeMounts:
+            - name: liquibase-changelog
+              mountPath: {{ .Values.migrations.changelog.mountPath }}
+              readOnly: true
+          {{- end }}
+      {{- if .Values.migrations.changelog.enabled }}
+      volumes:
+        - name: liquibase-changelog
+          configMap:
+            name: {{ default (printf "%s-liquibase-changelog" (include "java-service.fullname" .)) .Values.migrations.changelog.configMapName }}
+      {{- end }}
+{{- end }}
