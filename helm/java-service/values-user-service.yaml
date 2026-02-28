@@ -45,8 +45,6 @@ env:
     value: "8080"
   - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
     value: health,info,prometheus
-  - name: SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI
-    value: http://keycloak.keycloak.svc.cluster.local/realms/banking
   - name: MANAGEMENT_OTLP_TRACING_ENDPOINT
     value: http://otel-collector.observability.svc.cluster.local:4318/v1/traces
   - name: GCP_PROJECT_ID
@@ -63,11 +61,3 @@ resources:
 networkPolicy:
   enabled: true
   allowInternetEgress: false
-  extraEgress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: keycloak
-      ports:
-        - protocol: TCP
-          port: 8080

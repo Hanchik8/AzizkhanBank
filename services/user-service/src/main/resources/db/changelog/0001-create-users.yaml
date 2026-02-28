@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: 0001-create-users
+      author: user-service
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_users
+              - column:
+                  name: phone_number
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: users
+            indexName: uk_users_phone_number
+            unique: true
+            columns:
+              - column:
+                  name: phone_number
