@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.Locale;
 
 public record TransferCommand(
+    String userId,
     String idempotencyKey,
     Long fromAccountId,
     Long toAccountId,
@@ -14,6 +15,9 @@ public record TransferCommand(
 ) {
 
     public void validate() {
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalArgumentException("userId is required");
+        }
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new IllegalArgumentException("Idempotency-Key is required");
         }

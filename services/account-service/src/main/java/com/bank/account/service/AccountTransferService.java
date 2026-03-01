@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +57,7 @@ public class AccountTransferService {
     @Transactional
     public TransferResult transfer(TransferCommand command) {
         command.validate();
+        verifySourceAccountOwnership(command);
 
         List<RLock> locks = acquireAccountLocks(command.fromAccountId(), command.toAccountId());
         try {
@@ -118,6 +120,15 @@ public class AccountTransferService {
             return TransferResult.from(committedTransaction, false);
         } finally {
             releaseLocks(locks);
+        }
+    }
+
+    private void verifySourceAccountOwnership(TransferCommand command) {
+        String sourceAccountOwnerId = accountRepository.findCustomerIdById(command.fromAccountId())
+            .orElseThrow(() -> new IllegalArgumentException("Source account not found"));
+
+        if (!sourceAccountOwnerId.equals(command.userId())) {
+            throw new AccessDeniedException("Source account does not belong to authenticated user");
         }
     }
 

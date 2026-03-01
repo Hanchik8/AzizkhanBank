@@ -11,6 +11,12 @@ spring:
           uri: http://auth-service:8080
           predicates:
             - Path=/api/v1/auth/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                key-resolver: "#{@ipKeyResolver}"
+                redis-rate-limiter.replenishRate: 1
+                redis-rate-limiter.burstCapacity: 3
         - id: account-service
           uri: http://account-service:8080
           predicates:
