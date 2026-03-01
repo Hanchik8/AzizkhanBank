@@ -1,5 +1,6 @@
 package com.bank.account.service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -28,9 +29,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class AccountTransferService {
 
+    private static final BigDecimal FEE_PERCENTAGE = new BigDecimal("0.01");
+    private static final Long SYSTEM_ACCOUNT_ID = 9999L;
+
     private final AccountRepository accountRepository;
     private final AccountTransactionRepository accountTransactionRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
+    private final TransferLimitService transferLimitService;
     private final OutboxEventRepository outboxEventRepository;
     private final RedissonClient redissonClient;
     private final RedisLockProperties redisLockProperties;
@@ -40,6 +45,7 @@ public class AccountTransferService {
         AccountRepository accountRepository,
         AccountTransactionRepository accountTransactionRepository,
         LedgerEntryRepository ledgerEntryRepository,
+        TransferLimitService transferLimitService,
         OutboxEventRepository outboxEventRepository,
         RedissonClient redissonClient,
         RedisLockProperties redisLockProperties,
@@ -48,6 +54,7 @@ public class AccountTransferService {
         this.accountRepository = accountRepository;
         this.accountTransactionRepository = accountTransactionRepository;
         this.ledgerEntryRepository = ledgerEntryRepository;
+        this.transferLimitService = transferLimitService;
         this.outboxEventRepository = outboxEventRepository;
         this.redissonClient = redissonClient;
         this.redisLockProperties = redisLockProperties;
@@ -58,8 +65,9 @@ public class AccountTransferService {
     public TransferResult transfer(TransferCommand command) {
         command.validate();
         verifySourceAccountOwnership(command);
+        transferLimitService.checkAndRecordDailyLimit(command.userId(), command.amount());
 
-        List<RLock> locks = acquireAccountLocks(command.fromAccountId(), command.toAccountId());
+        List<RLock> locks = acquireAccountLocks(command.fromAccountId(), command.toAccountId(), SYSTEM_ACCOUNT_ID);
         try {
             AccountTransaction existingByIdempotency = accountTransactionRepository
                 .findByIdempotencyKeyForUpdate(command.idempotencyKey())
@@ -74,12 +82,23 @@ public class AccountTransferService {
                 .orElseThrow(() -> new IllegalArgumentException("Source account not found"));
             Account destination = accountRepository.findByIdForUpdate(command.toAccountId())
                 .orElseThrow(() -> new IllegalArgumentException("Destination account not found"));
+            Account systemAccount = accountRepository.findByIdForUpdate(SYSTEM_ACCOUNT_ID)
+                .orElseThrow(() -> new IllegalArgumentException("System account not found"));
+
+            BigDecimal feeAmount = command.amount().multiply(FEE_PERCENTAGE);
+            BigDecimal totalDebitAmount = command.amount().add(feeAmount);
 
             source.ensureCurrency(command.normalizedCurrency());
             destination.ensureCurrency(command.normalizedCurrency());
+            systemAccount.ensureCurrency(command.normalizedCurrency());
 
-            source.debit(command.amount());
+            if (source.getBalance().compareTo(totalDebitAmount) < 0) {
+                throw new IllegalStateException("Insufficient funds for transfer amount and fee");
+            }
+
+            source.debit(totalDebitAmount);
             destination.credit(command.amount());
+            systemAccount.credit(feeAmount);
 
             String transferId = UUID.randomUUID().toString();
 
@@ -97,6 +116,18 @@ public class AccountTransferService {
                 transferId,
                 destination.getId(),
                 command.amount(),
+                command.normalizedCurrency()
+            ));
+            ledgerEntryRepository.save(LedgerEntry.debit(
+                transferId,
+                source.getId(),
+                feeAmount,
+                command.normalizedCurrency()
+            ));
+            ledgerEntryRepository.save(LedgerEntry.credit(
+                transferId,
+                systemAccount.getId(),
+                feeAmount,
                 command.normalizedCurrency()
             ));
 

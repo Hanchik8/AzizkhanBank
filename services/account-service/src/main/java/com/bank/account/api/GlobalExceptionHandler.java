@@ -1,5 +1,6 @@
 package com.bank.account.api;
 
+import com.bank.account.service.LimitExceededException;
 import com.bank.account.security.DpopSecurityException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
@@ -54,6 +55,14 @@ public class GlobalExceptionHandler {
         HttpServletRequest request
     ) {
         return buildResponse(HttpStatus.FORBIDDEN, ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(LimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleLimitExceededException(
+        LimitExceededException ex,
+        HttpServletRequest request
+    ) {
+        return buildResponse(HttpStatus.valueOf(422), ex.getMessage(), request.getRequestURI());
     }
 
     private ResponseEntity<ApiErrorResponse> buildResponse(HttpStatus status, String message, String path) {
