@@ -17,14 +17,17 @@ public class Account {
     @Id
     private Long id;
 
-    @Column(name = "customer_id", nullable = false)
-    private String customerId;
+    @Column(name = "client_id", nullable = false)
+    private String clientId;
 
     @Column(nullable = false, length = 3)
     private String currency;
 
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal balance;
+
+    @Column(nullable = false, length = 16)
+    private String status;
 
     @Version
     private Long version;
@@ -39,8 +42,12 @@ public class Account {
         return id;
     }
 
+    public String getClientId() {
+        return clientId;
+    }
+
     public String getCustomerId() {
-        return customerId;
+        return clientId;
     }
 
     public String getCurrency() {
@@ -49,6 +56,10 @@ public class Account {
 
     public BigDecimal getBalance() {
         return balance;
+    }
+
+    public String getStatus() {
+        return status;
     }
 
     public Long getVersion() {
@@ -78,6 +89,10 @@ public class Account {
         if (!Objects.equals(currency, expectedCurrency)) {
             throw new IllegalArgumentException("Currency mismatch");
         }
+    }
+
+    public boolean isFrozen() {
+        return "FROZEN".equalsIgnoreCase(status);
     }
 
     private static void requirePositive(BigDecimal amount) {

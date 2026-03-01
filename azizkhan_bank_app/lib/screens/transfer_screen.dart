@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:azizkhan_bank_app/api/api_service.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -27,17 +25,31 @@ class _TransferScreenState extends State<TransferScreen> {
     super.dispose();
   }
 
+  num? _parsedAmount() {
+    final amountText = _amountController.text.trim().replaceAll(',', '.');
+    return num.tryParse(amountText);
+  }
+
+  String _feeText() {
+    final amount = _parsedAmount();
+    if (amount == null || amount <= 0) {
+      return 'Fee (1%): 0.00';
+    }
+
+    final fee = amount * 0.01;
+    return 'Fee (1%): ${fee.toStringAsFixed(2)}';
+  }
+
   Future<void> _submitTransfer() async {
     final toAccountId = _toAccountIdController.text.trim();
-    final amountText = _amountController.text.trim().replaceAll(',', '.');
-    final amount = num.tryParse(amountText);
+    final amount = _parsedAmount();
 
     if (toAccountId.isEmpty) {
-      _showError('Введите ID счета получателя');
+      _showError('Enter recipient account ID');
       return;
     }
     if (amount == null || amount <= 0) {
-      _showError('Введите корректную сумму перевода');
+      _showError('Enter a valid amount');
       return;
     }
 
@@ -48,20 +60,23 @@ class _TransferScreenState extends State<TransferScreen> {
     });
 
     try {
-      final result = await _apiService.createTransfer(
+      await _apiService.createTransfer(
         toAccountId: toAccountId,
         amount: amount,
         idempotencyKey: idempotencyKey,
       );
       if (!mounted) return;
 
-      final transactionId = _extractTransactionId(result);
-      final message = transactionId != null
-          ? 'Перевод успешен. Transaction ID: $transactionId'
-          : 'Перевод успешен. Ответ: ${jsonEncode(result)}';
-      _showSnack(message, isError: false);
-    } on DioException catch (error) {
-      _showSnack(_resolveDioMessage(error), isError: true);
+      _showSnack('Transfer completed successfully', isError: false);
+      _toAccountIdController.clear();
+      _amountController.clear();
+      setState(() {});
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 422) {
+        _showSnack('Превышен суточный лимит', isError: true);
+      } else {
+        _showSnack(_resolveDioMessage(e), isError: true);
+      }
     } catch (error) {
       _showSnack(error.toString(), isError: true);
     } finally {
@@ -73,20 +88,6 @@ class _TransferScreenState extends State<TransferScreen> {
     }
   }
 
-  String? _extractTransactionId(Map<String, dynamic> payload) {
-    final knownKeys = <String>['transactionId', 'transferId', 'id'];
-    for (final key in knownKeys) {
-      final value = payload[key];
-      if (value != null) {
-        final asString = value.toString();
-        if (asString.isNotEmpty) {
-          return asString;
-        }
-      }
-    }
-    return null;
-  }
-
   String _resolveDioMessage(DioException error) {
     final payload = error.response?.data;
     if (payload is Map<String, dynamic>) {
@@ -95,7 +96,7 @@ class _TransferScreenState extends State<TransferScreen> {
         return message;
       }
     }
-    return error.message ?? 'Ошибка при выполнении перевода';
+    return error.message ?? 'Transfer failed';
   }
 
   void _showError(String message) {
@@ -125,18 +126,24 @@ class _TransferScreenState extends State<TransferScreen> {
               TextField(
                 controller: _toAccountIdController,
                 decoration: const InputDecoration(
-                  labelText: 'ID счета получателя (toAccountId)',
+                  labelText: 'Recipient account ID (toAccountId)',
                 ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _amountController,
+                onChanged: (_) => setState(() {}),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 decoration: const InputDecoration(
-                  labelText: 'Сумма перевода (amount)',
+                  labelText: 'Transfer amount (amount)',
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _feeText(),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 16),
               ElevatedButton(
@@ -147,7 +154,7 @@ class _TransferScreenState extends State<TransferScreen> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Отправить перевод'),
+                    : const Text('Send transfer'),
               ),
             ],
           ),

@@ -85,6 +85,8 @@ public class AccountTransferService {
             Account systemAccount = accountRepository.findByIdForUpdate(SYSTEM_ACCOUNT_ID)
                 .orElseThrow(() -> new IllegalArgumentException("System account not found"));
 
+            ensureSourceAccountNotFrozen(source);
+
             BigDecimal feeAmount = command.amount().multiply(FEE_PERCENTAGE);
             BigDecimal totalDebitAmount = command.amount().add(feeAmount);
 
@@ -160,6 +162,12 @@ public class AccountTransferService {
 
         if (!sourceAccountOwnerId.equals(command.userId())) {
             throw new AccessDeniedException("Source account does not belong to authenticated user");
+        }
+    }
+
+    private void ensureSourceAccountNotFrozen(Account source) {
+        if (source.isFrozen()) {
+            throw new AccessDeniedException("Source account is frozen");
         }
     }
 

@@ -33,7 +33,7 @@ public class AccountQueryService {
                 account.getId(),
                 account.getCurrency(),
                 account.getBalance(),
-                "ACTIVE"
+                account.getStatus()
             ))
             .toList();
     }
@@ -43,7 +43,7 @@ public class AccountQueryService {
         Account account = accountRepository.findById(accountId)
             .orElseThrow(() -> new IllegalArgumentException("Account not found"));
 
-        if (!account.getCustomerId().equals(userId)) {
+        if (!account.getClientId().equals(userId)) {
             throw new AccessDeniedException("Account does not belong to authenticated user");
         }
 

@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: fraud-service
+  kafka:
+    bootstrap-servers: kafka:9092
+    streams:
+      application-id: fraud-detector
+
+app:
+  kafka:
+    topics:
+      outbox-events: account.events.v1
+      fraud-alerts: fraud.alerts
