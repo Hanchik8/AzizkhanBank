@@ -20,7 +20,7 @@ spring:
         - id: account-service
           uri: http://account-service:8080
           predicates:
-            - Path=/api/v1/transfers/**,/api/v1/devices/**
+            - Path=/api/v1/transfers/**,/api/v1/devices/**,/api/v1/accounts/**
 
 management:
   endpoints:

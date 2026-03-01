@@ -1,5 +1,6 @@
 package com.bank.account.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -19,4 +20,7 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     @Query("select a.customerId from Account a where a.id = :id")
     Optional<String> findCustomerIdById(@Param("id") Long id);
+
+    @Query("select a from Account a where a.customerId = :clientId")
+    List<Account> findAllByClientId(@Param("clientId") String clientId);
 }
