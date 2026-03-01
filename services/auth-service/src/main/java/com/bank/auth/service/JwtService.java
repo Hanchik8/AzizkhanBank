@@ -48,9 +48,9 @@ public class JwtService {
             .compact();
     }
 
-    public TokenPair generateFinalTokenPair(UUID userId) {
-        String accessToken = generateToken(userId, "ACCESS", accessExpiration);
-        String refreshToken = generateToken(userId, "REFRESH", refreshExpiration);
+    public TokenPair generateFinalTokenPair(UUID userId, String deviceId) {
+        String accessToken = generateToken(userId, deviceId, "ACCESS", accessExpiration);
+        String refreshToken = generateToken(userId, deviceId, "REFRESH", refreshExpiration);
         return new TokenPair(accessToken, refreshToken);
     }
 
@@ -100,13 +100,14 @@ public class JwtService {
         return token;
     }
 
-    private String generateToken(UUID userId, String tokenType, Duration ttl) {
+    private String generateToken(UUID userId, String deviceId, String tokenType, Duration ttl) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(ttl);
 
         return Jwts.builder()
             .subject(userId.toString())
             .claim("userId", userId.toString())
+            .claim("deviceId", deviceId)
             .claim("tokenType", tokenType)
             .issuedAt(Date.from(now))
             .expiration(Date.from(expiresAt))

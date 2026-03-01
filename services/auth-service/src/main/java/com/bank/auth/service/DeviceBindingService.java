@@ -17,6 +17,6 @@ public class DeviceBindingService {
     public JwtService.TokenPair bindDevice(String authorizationHeader, String deviceId, String publicKey) {
         UUID userId = jwtService.requireRegistrationUserId(authorizationHeader);
         clientDeviceService.registerDevice(userId.toString(), deviceId, publicKey);
-        return jwtService.generateFinalTokenPair(userId);
+        return jwtService.generateFinalTokenPair(userId, deviceId);
     }
 }

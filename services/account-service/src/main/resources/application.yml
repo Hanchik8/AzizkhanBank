@@ -57,6 +57,11 @@ spring:
         request.timeout.ms: 30000
     properties:
       security.protocol: ${SPRING_KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          secret-value: ${JWT_SECRET:change-this-secret-key-to-at-least-32-bytes-long}
 
 banking:
   kafka:

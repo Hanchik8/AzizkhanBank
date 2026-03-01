@@ -46,7 +46,7 @@ app:
 
 auth:
   jwt:
-    secret: ${AUTH_JWT_SECRET:change-this-secret-key-to-at-least-32-bytes-long}
+    secret: ${JWT_SECRET:change-this-secret-key-to-at-least-32-bytes-long}
     registration-expiration-minutes: ${AUTH_JWT_REGISTRATION_EXPIRATION_MINUTES:10}
     access-expiration-minutes: ${AUTH_JWT_ACCESS_EXPIRATION_MINUTES:15}
     refresh-expiration-minutes: ${AUTH_JWT_REFRESH_EXPIRATION_MINUTES:43200}
