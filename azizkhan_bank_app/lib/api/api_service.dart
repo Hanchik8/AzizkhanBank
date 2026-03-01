@@ -32,7 +32,7 @@ class ApiService {
     return ApiService._(client, storage, crypto);
   }
 
-  static const String baseUrl = 'http://10.0.2.2:8080';
+  static const String baseUrl = 'http://192.168.1.31:8080';
   static const String accessTokenStorageKey = 'accessToken';
   static const String refreshTokenStorageKey = 'refreshToken';
 
@@ -134,6 +134,26 @@ class ApiService {
     return response.data ?? <String, dynamic>{};
   }
 
+  Future<List<dynamic>> getAccounts() async {
+    final response = await _dio.get<dynamic>('/api/v1/accounts');
+    final data = response.data;
+    if (data is List<dynamic>) {
+      return data;
+    }
+    return <dynamic>[];
+  }
+
+  Future<List<dynamic>> getAccountHistory(int accountId) async {
+    final response = await _dio.get<dynamic>(
+      '/api/v1/accounts/$accountId/history',
+    );
+    final data = response.data;
+    if (data is List<dynamic>) {
+      return data;
+    }
+    return <dynamic>[];
+  }
+
   String? _readFirstString(Map<String, dynamic> source, List<String> keys) {
     for (final key in keys) {
       final value = source[key];
@@ -213,6 +233,7 @@ class DpopAuthInterceptor extends Interceptor {
 
   bool _isProtectedPath(String path) {
     final normalized = path.startsWith('/') ? path : '/$path';
-    return normalized.startsWith('/api/v1/transfers');
+    return normalized.startsWith('/api/v1/transfers') ||
+        normalized.startsWith('/api/v1/accounts');
   }
 }
