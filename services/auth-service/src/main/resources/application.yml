@@ -27,7 +27,7 @@ spring:
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${SPRING_DATA_REDIS_PASSWORD:bank_password}
       ssl:
-        enabled: ${SPRING_DATA_REDIS_SSL:false}
+        enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:${SPRING_DATA_REDIS_SSL:false}}
   kafka:
     bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:

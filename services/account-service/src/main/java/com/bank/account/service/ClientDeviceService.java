@@ -7,7 +7,7 @@ import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
-import java.security.interfaces.RSAPublicKey;
+import java.security.interfaces.ECPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Clock;
 import java.time.Duration;
@@ -49,7 +49,7 @@ public class ClientDeviceService {
             throw new IllegalArgumentException("Device is already registered");
         }
 
-        PublicKey publicKey = decodeRsaPublicKey(base64PublicKey);
+        PublicKey publicKey = decodePublicKey(base64PublicKey);
         String normalizedPublicKey = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         ClientDevice clientDevice = ClientDevice.registered(userId.trim(), deviceId.trim(), normalizedPublicKey);
@@ -89,7 +89,7 @@ public class ClientDeviceService {
         String signedPayload = timestampHeader + (rawJsonBody == null ? "" : rawJsonBody);
 
         try {
-            PublicKey publicKey = decodeRsaPublicKey(clientDevice.getPublicKey());
+            PublicKey publicKey = decodePublicKey(clientDevice.getPublicKey());
             boolean verified = verifySignature(signedPayload, signatureHeader, publicKey);
             if (!verified) {
                 return DpopVerificationResult.failure(HttpStatus.UNAUTHORIZED, "Invalid DPoP signature");
@@ -117,20 +117,26 @@ public class ClientDeviceService {
         }
     }
 
-    private PublicKey decodeRsaPublicKey(String base64PublicKey) {
+    // Supports both EC and RSA public keys, with or without PEM headers
+    private PublicKey decodePublicKey(String publicKeyInput) {
         try {
-            byte[] keyBytes = Base64.getDecoder().decode(base64PublicKey);
+            String base64 = publicKeyInput
+                .replaceAll("-----BEGIN[^-]*-----", "")
+                .replaceAll("-----END[^-]*-----", "")
+                .replaceAll("\\s+", "");
+            byte[] keyBytes = Base64.getDecoder().decode(base64);
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey publicKey = keyFactory.generatePublic(keySpec);
-            if (!(publicKey instanceof RSAPublicKey)) {
-                throw new IllegalArgumentException("publicKey must be an RSA key");
+
+            for (String algorithm : new String[]{"EC", "RSA"}) {
+                try {
+                    return KeyFactory.getInstance(algorithm).generatePublic(keySpec);
+                } catch (GeneralSecurityException ignored) {
+                    // try next algorithm
+                }
             }
-            return publicKey;
+            throw new IllegalArgumentException("publicKey must be a valid EC or RSA public key");
         } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("publicKey must be a valid Base64-encoded RSA key", ex);
-        } catch (GeneralSecurityException ex) {
-            throw new IllegalArgumentException("publicKey must be a valid Base64-encoded RSA key", ex);
+            throw new IllegalArgumentException("publicKey must be a valid Base64-encoded public key", ex);
         }
     }
 
@@ -143,7 +149,9 @@ public class ClientDeviceService {
             throw new IllegalArgumentException("X-Signature must be a valid Base64 string", ex);
         }
 
-        Signature verifier = Signature.getInstance("SHA256withRSA");
+        // Use ECDSA for EC keys, RSA for RSA keys
+        String algorithm = (publicKey instanceof ECPublicKey) ? "SHA256withECDSA" : "SHA256withRSA";
+        Signature verifier = Signature.getInstance(algorithm);
         verifier.initVerify(publicKey);
         verifier.update(payload.getBytes(StandardCharsets.UTF_8));
         return verifier.verify(signatureBytes);

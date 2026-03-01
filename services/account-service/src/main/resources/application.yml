@@ -42,7 +42,7 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       ssl:
-        enabled: ${SPRING_DATA_REDIS_SSL:true}
+        enabled: ${SPRING_DATA_REDIS_SSL_ENABLED:${SPRING_DATA_REDIS_SSL:true}}
       password: ${sm://banking-prod-redis-auth}
   kafka:
     bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -76,7 +76,7 @@ banking:
     lock:
       host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
       port: ${SPRING_DATA_REDIS_PORT:6379}
-      ssl: ${SPRING_DATA_REDIS_SSL:true}
+      ssl: ${BANKING_REDIS_LOCK_SSL:${SPRING_DATA_REDIS_SSL_ENABLED:${SPRING_DATA_REDIS_SSL:true}}}
       password: ${sm://banking-prod-redis-auth}
       wait-timeout: ${BANKING_REDIS_LOCK_WAIT_TIMEOUT:5s}
       lease-timeout: ${BANKING_REDIS_LOCK_LEASE_TIMEOUT:15s}

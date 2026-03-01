@@ -2,6 +2,12 @@ databaseChangeLog:
   - changeSet:
       id: 0001-create-client-devices
       author: security-arch
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        not:
+          tableExists:
+            tableName: client_devices
       changes:
         - createTable:
             tableName: client_devices

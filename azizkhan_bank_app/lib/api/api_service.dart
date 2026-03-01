@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:azizkhan_bank_app/crypto/crypto_service.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -35,6 +37,7 @@ class ApiService {
   static const String baseUrl = 'http://192.168.1.31:8080';
   static const String accessTokenStorageKey = 'accessToken';
   static const String refreshTokenStorageKey = 'refreshToken';
+  static const String deviceIdStorageKey = 'deviceId';
 
   final Dio _dio;
   final FlutterSecureStorage _secureStorage;
@@ -119,15 +122,39 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> createTransfer({
+    required String fromAccountId,
     required String toAccountId,
     required num amount,
+    required String currency,
     required String idempotencyKey,
   }) async {
+    final deviceId = await _secureStorage.read(key: ApiService.deviceIdStorageKey) ?? '';
+    final privateKeyPem = await _secureStorage.read(key: CryptoService.privateKeyStorageKey) ?? '';
+    final timestamp = DateTime.now().toUtc().toIso8601String();
+
+    final bodyMap = <String, dynamic>{
+      'fromAccountId': int.parse(fromAccountId),
+      'toAccountId': int.parse(toAccountId),
+      'amount': amount,
+      'currency': currency,
+    };
+    final bodyJson = jsonEncode(bodyMap);
+    final signature = _cryptoService.signPayload(
+      payload: timestamp + bodyJson,
+      privateKeyPem: privateKeyPem,
+    );
+
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/v1/transfers',
-      data: <String, dynamic>{'toAccountId': toAccountId, 'amount': amount},
+      data: bodyJson,
       options: Options(
-        headers: <String, dynamic>{'Idempotency-Key': idempotencyKey},
+        contentType: 'application/json',
+        headers: <String, dynamic>{
+          'Idempotency-Key': idempotencyKey,
+          'X-Device-Id': deviceId,
+          'X-Timestamp': timestamp,
+          'X-Signature': signature,
+        },
       ),
     );
 
@@ -225,7 +252,7 @@ class DpopAuthInterceptor extends Interceptor {
       privateKeyPem: privateKeyPem,
     );
 
-    options.headers['Authorization'] = 'DPoP $accessToken';
+    options.headers['Authorization'] = 'Bearer $accessToken';
     options.headers['DPoP'] = proofToken;
 
     handler.next(options);

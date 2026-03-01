@@ -5,7 +5,6 @@ import com.bank.auth.repository.ClientDeviceRepository;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.PublicKey;
-import java.security.interfaces.RSAPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import org.springframework.stereotype.Service;
@@ -38,27 +37,35 @@ public class ClientDeviceService {
             throw new DeviceAlreadyBoundException(normalizedDeviceId);
         }
 
-        PublicKey publicKey = decodeRsaPublicKey(base64PublicKey);
+        PublicKey publicKey = decodePublicKey(base64PublicKey);
         String normalizedPublicKey = Base64.getEncoder().encodeToString(publicKey.getEncoded());
 
         ClientDevice clientDevice = ClientDevice.registered(userId.trim(), normalizedDeviceId, normalizedPublicKey);
         return clientDeviceRepository.save(clientDevice);
     }
 
-    private PublicKey decodeRsaPublicKey(String base64PublicKey) {
+    private PublicKey decodePublicKey(String publicKeyInput) {
         try {
-            byte[] keyBytes = Base64.getDecoder().decode(base64PublicKey);
+            // Strip PEM headers and all whitespace if the key is in PEM format
+            String base64 = publicKeyInput
+                .replaceAll("-----BEGIN[^-]*-----", "")
+                .replaceAll("-----END[^-]*-----", "")
+                .replaceAll("\\s+", "");
+
+            byte[] keyBytes = Base64.getDecoder().decode(base64);
             X509EncodedKeySpec keySpec = new X509EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PublicKey publicKey = keyFactory.generatePublic(keySpec);
-            if (!(publicKey instanceof RSAPublicKey)) {
-                throw new IllegalArgumentException("publicKey must be an RSA key");
+
+            // Try EC first (DPoP / Flutter uses P-256), fall back to RSA
+            for (String algorithm : new String[]{"EC", "RSA"}) {
+                try {
+                    return KeyFactory.getInstance(algorithm).generatePublic(keySpec);
+                } catch (GeneralSecurityException ignored) {
+                    // try next algorithm
+                }
             }
-            return publicKey;
+            throw new IllegalArgumentException("publicKey must be a valid EC or RSA public key");
         } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("publicKey must be a valid Base64-encoded RSA key", ex);
-        } catch (GeneralSecurityException ex) {
-            throw new IllegalArgumentException("publicKey must be a valid Base64-encoded RSA key", ex);
+            throw new IllegalArgumentException("publicKey must be a valid Base64-encoded public key", ex);
         }
     }
 }

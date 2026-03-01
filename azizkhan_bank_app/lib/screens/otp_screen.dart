@@ -66,6 +66,10 @@ class _OtpScreenState extends State<OtpScreen> {
       );
 
       await _apiService.saveAuthTokens(authTokens);
+      await _secureStorage.write(
+        key: ApiService.deviceIdStorageKey,
+        value: deviceId,
+      );
 
       if (!mounted) return;
       await Navigator.of(context).pushAndRemoveUntil(
