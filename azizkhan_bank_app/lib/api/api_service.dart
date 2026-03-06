@@ -15,10 +15,7 @@ class ApiService {
   ApiService._(this._dio, this._secureStorage, this._cryptoService) {
     _dio.options.baseUrl = baseUrl;
     _dio.interceptors.add(
-      DpopAuthInterceptor(
-        secureStorage: _secureStorage,
-        cryptoService: _cryptoService,
-      ),
+      BearerAuthInterceptor(secureStorage: _secureStorage, apiService: this),
     );
   }
 
@@ -34,7 +31,10 @@ class ApiService {
     return ApiService._(client, storage, crypto);
   }
 
-  static const String baseUrl = 'http://192.168.1.31:8080';
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://192.168.1.31:8080',
+  );
   static const String accessTokenStorageKey = 'accessToken';
   static const String refreshTokenStorageKey = 'refreshToken';
   static const String deviceIdStorageKey = 'deviceId';
@@ -57,11 +57,7 @@ class ApiService {
     );
 
     final data = response.data ?? <String, dynamic>{};
-    final registrationToken = _readFirstString(data, <String>[
-      'registrationToken',
-      'token',
-      'jwt',
-    ]);
+    final registrationToken = data['token']?.toString();
     if (registrationToken == null || registrationToken.isEmpty) {
       throw StateError(
         'Registration token is missing in /api/v1/auth/verify-otp response',
@@ -87,14 +83,8 @@ class ApiService {
     );
 
     final data = response.data ?? <String, dynamic>{};
-    final accessToken = _readFirstString(data, <String>[
-      'accessToken',
-      'access_token',
-    ]);
-    final refreshToken = _readFirstString(data, <String>[
-      'refreshToken',
-      'refresh_token',
-    ]);
+    final accessToken = data['accessToken']?.toString();
+    final refreshToken = data['refreshToken']?.toString();
 
     if (accessToken == null || accessToken.isEmpty) {
       throw StateError(
@@ -181,32 +171,53 @@ class ApiService {
     return <dynamic>[];
   }
 
-  String? _readFirstString(Map<String, dynamic> source, List<String> keys) {
-    for (final key in keys) {
-      final value = source[key];
-      if (value is String && value.isNotEmpty) {
-        return value;
-      }
-      if (value != null) {
-        final asString = value.toString();
-        if (asString.isNotEmpty) {
-          return asString;
-        }
-      }
+  Future<AuthTokens?> refreshTokens() async {
+    final refreshToken = await _secureStorage.read(key: refreshTokenStorageKey);
+    if (refreshToken == null || refreshToken.isEmpty) return null;
+
+    try {
+      final response = await Dio(BaseOptions(baseUrl: baseUrl))
+          .post<Map<String, dynamic>>(
+        '/api/v1/auth/refresh',
+        data: <String, dynamic>{'refreshToken': refreshToken},
+      );
+
+      final data = response.data ?? <String, dynamic>{};
+      final newAccess = data['accessToken']?.toString();
+      final newRefresh = data['refreshToken']?.toString();
+      if (newAccess == null || newAccess.isEmpty) return null;
+
+      final tokens = AuthTokens(
+        accessToken: newAccess,
+        refreshToken: newRefresh ?? refreshToken,
+      );
+      await saveAuthTokens(tokens);
+      return tokens;
+    } catch (_) {
+      return null;
     }
-    return null;
+  }
+
+  static String resolveDioMessage(DioException error, {String fallback = 'Ошибка запроса'}) {
+    final payload = error.response?.data;
+    if (payload is Map<String, dynamic>) {
+      final message = payload['message']?.toString();
+      if (message != null && message.isNotEmpty) return message;
+    }
+    return error.message ?? fallback;
   }
 }
 
-class DpopAuthInterceptor extends Interceptor {
-  DpopAuthInterceptor({
+class BearerAuthInterceptor extends Interceptor {
+  BearerAuthInterceptor({
     required FlutterSecureStorage secureStorage,
-    required CryptoService cryptoService,
-  }) : _secureStorage = secureStorage,
-       _cryptoService = cryptoService;
+    required ApiService apiService,
+  })  : _secureStorage = secureStorage,
+       _apiService = apiService;
 
   final FlutterSecureStorage _secureStorage;
-  final CryptoService _cryptoService;
+  final ApiService _apiService;
+  bool _isRefreshing = false;
 
   @override
   Future<void> onRequest(
@@ -225,37 +236,35 @@ class DpopAuthInterceptor extends Interceptor {
       handler.reject(
         DioException(
           requestOptions: options,
-          error: StateError('Access token not found in flutter_secure_storage'),
+          error: StateError('Access token not found'),
           type: DioExceptionType.unknown,
         ),
       );
       return;
     }
-
-    final privateKeyPem = await _secureStorage.read(
-      key: CryptoService.privateKeyStorageKey,
-    );
-    if (privateKeyPem == null || privateKeyPem.isEmpty) {
-      handler.reject(
-        DioException(
-          requestOptions: options,
-          error: StateError('Private key not found in flutter_secure_storage'),
-          type: DioExceptionType.unknown,
-        ),
-      );
-      return;
-    }
-
-    final proofToken = _cryptoService.generateDpopProofToken(
-      httpMethod: options.method,
-      requestUrl: options.uri.toString(),
-      privateKeyPem: privateKeyPem,
-    );
 
     options.headers['Authorization'] = 'Bearer $accessToken';
-    options.headers['DPoP'] = proofToken;
-
     handler.next(options);
+  }
+
+  @override
+  Future<void> onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response?.statusCode == 401 && !_isRefreshing) {
+      _isRefreshing = true;
+      try {
+        final tokens = await _apiService.refreshTokens();
+        if (tokens != null) {
+          err.requestOptions.headers['Authorization'] = 'Bearer ${tokens.accessToken}';
+          final response = await Dio(BaseOptions(baseUrl: ApiService.baseUrl))
+              .fetch(err.requestOptions);
+          _isRefreshing = false;
+          handler.resolve(response);
+          return;
+        }
+      } catch (_) {}
+      _isRefreshing = false;
+    }
+    handler.next(err);
   }
 
   bool _isProtectedPath(String path) {

@@ -30,11 +30,18 @@ public class AuthEventsConsumer {
         }
 
         if (!StringUtils.hasText(event.phoneNumber()) || !StringUtils.hasText(event.otpCode())) {
-            log.warn("Received auth event with empty phoneNumber or otpCode: {}", payload);
+            log.warn("Received auth event with missing phoneNumber or otpCode");
             return;
         }
 
-        log.info("Sending SMS to [{}]: Your code is [{}]", event.phoneNumber(), event.otpCode());
+        String maskedPhone = maskPhone(event.phoneNumber());
+        log.info("Sending OTP SMS to {}", maskedPhone);
+        // TODO: integrate with actual SMS provider (Twilio, etc.)
+    }
+
+    private static String maskPhone(String phone) {
+        if (phone.length() <= 4) return "****";
+        return phone.substring(0, phone.length() - 4) + "****";
     }
 
     private AuthEventPayload parsePayload(String payload) {

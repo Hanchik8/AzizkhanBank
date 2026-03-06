@@ -1,0 +1,13 @@
+.git
+.github
+.env
+*.env
+docker-compose*.yml
+helm/
+gitops/
+infra/
+azizkhan_bank_app/
+**/target/
+**/node_modules/
+**/.idea/
+**/.vscode/

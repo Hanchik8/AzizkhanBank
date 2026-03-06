@@ -41,12 +41,14 @@ app:
   kafka:
     topics:
       auth-events: ${AUTH_EVENTS_TOPIC:auth.events.v1}
+      user-registered: ${USER_REGISTERED_TOPIC:user.registered.v1}
   user-service:
     base-url: ${USER_SERVICE_BASE_URL:http://localhost:8081}
+  internal-api-key: ${INTERNAL_API_KEY:}
 
 auth:
   jwt:
-    secret: ${JWT_SECRET:change-this-secret-key-to-at-least-32-bytes-long}
+    secret: ${JWT_SECRET}
     registration-expiration-minutes: ${AUTH_JWT_REGISTRATION_EXPIRATION_MINUTES:10}
     access-expiration-minutes: ${AUTH_JWT_ACCESS_EXPIRATION_MINUTES:15}
     refresh-expiration-minutes: ${AUTH_JWT_REFRESH_EXPIRATION_MINUTES:43200}

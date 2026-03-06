@@ -77,9 +77,14 @@ public class OutboxEvent {
         this.lastError = null;
     }
 
+    private static final int MAX_ATTEMPTS = 10;
+
     public void registerPublishFailure(String errorMessage) {
         this.attemptCount += 1;
         this.lastError = truncate(errorMessage, 2048);
+        if (this.attemptCount >= MAX_ATTEMPTS) {
+            this.status = OutboxEventStatus.FAILED;
+        }
     }
 
     private static String truncate(String text, int maxLength) {

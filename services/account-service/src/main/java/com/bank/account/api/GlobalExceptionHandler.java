@@ -65,6 +65,23 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.valueOf(422), ex.getMessage(), request.getRequestURI());
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleIllegalStateException(
+        IllegalStateException ex,
+        HttpServletRequest request
+    ) {
+        String safeMessage = sanitizeMessage(ex.getMessage());
+        return buildResponse(HttpStatus.CONFLICT, safeMessage, request.getRequestURI());
+    }
+
+    private static String sanitizeMessage(String message) {
+        if (message == null || message.isBlank()) return "Request failed";
+        if (message.contains("lock") || message.contains("Redis") || message.contains("serialize")) {
+            return "Transfer temporarily unavailable, please try again";
+        }
+        return message;
+    }
+
     private ResponseEntity<ApiErrorResponse> buildResponse(HttpStatus status, String message, String path) {
         ApiErrorResponse body = new ApiErrorResponse(
             Instant.now(),

@@ -1,5 +1,5 @@
 x-jwt-secret: &jwt_secret
-  JWT_SECRET: ${JWT_SECRET:-change-this-secret-key-to-at-least-32-bytes-long}
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET environment variable is required. Generate with: openssl rand -base64 48}
 
 services:
   postgres:
@@ -78,6 +78,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/banking_db
       SPRING_DATASOURCE_USERNAME: bank_user
       SPRING_DATASOURCE_PASSWORD: bank_password
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-internal-dev-key-change-in-prod}
     mem_limit: 512m
     deploy:
       resources:
@@ -106,6 +107,7 @@ services:
       SPRING_DATA_REDIS_SSL_ENABLED: "false"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       USER_SERVICE_BASE_URL: http://user-service:8080
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-internal-dev-key-change-in-prod}
     mem_limit: 512m
     deploy:
       resources:
@@ -181,7 +183,8 @@ services:
       BANKING_REDIS_LOCK_SSL: "false"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_CLOUD_GCP_SECRETMANAGER_ENABLED: "false"
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_LIQUIBASE_ENABLED: "true"
     mem_limit: 512m
     deploy:
       resources:

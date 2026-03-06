@@ -26,6 +26,9 @@ spring:
       validation-timeout: 1000
       data-source-properties:
         reWriteBatchedInserts: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
   jpa:
     open-in-view: false
     hibernate:
@@ -36,7 +39,8 @@ spring:
           time_zone: UTC
         format_sql: false
   liquibase:
-    enabled: ${SPRING_LIQUIBASE_ENABLED:false}
+    enabled: ${SPRING_LIQUIBASE_ENABLED:true}
+    change-log: classpath:db/changelog/db.changelog-master.yaml
   data:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
@@ -61,12 +65,13 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          secret-value: ${JWT_SECRET:change-this-secret-key-to-at-least-32-bytes-long}
+          secret-value: ${JWT_SECRET}
 
 banking:
   kafka:
     topics:
       account-events: ${BANKING_KAFKA_TOPICS_ACCOUNT_EVENTS:account.events.v1}
+      user-registered: ${BANKING_KAFKA_TOPICS_USER_REGISTERED:user.registered.v1}
   outbox:
     poll-interval: ${BANKING_OUTBOX_POLL_INTERVAL:2000}
     initial-delay: ${BANKING_OUTBOX_INITIAL_DELAY:5000}

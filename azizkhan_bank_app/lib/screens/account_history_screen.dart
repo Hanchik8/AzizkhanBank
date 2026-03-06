@@ -32,88 +32,230 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
     try {
       final history = await _apiService.getAccountHistory(widget.accountId);
       if (!mounted) return;
-      setState(() {
-        _history = history;
-      });
+      setState(() => _history = history);
     } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _errorMessage = error.toString();
-      });
+      setState(() => _errorMessage = error.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   String _field(dynamic entry, String key, {String fallback = '-'}) {
-    if (entry is! Map<String, dynamic>) {
-      return fallback;
-    }
-    final value = entry[key];
-    return value?.toString() ?? fallback;
+    if (entry is! Map<String, dynamic>) return fallback;
+    return entry[key]?.toString() ?? fallback;
   }
 
   String _formatTimestamp(String rawTimestamp) {
     final parsed = DateTime.tryParse(rawTimestamp);
-    if (parsed == null) {
-      return rawTimestamp;
-    }
+    if (parsed == null) return rawTimestamp;
 
     final local = parsed.toLocal();
-    final year = local.year.toString().padLeft(4, '0');
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
+    final now = DateTime.now();
+    final isToday = local.year == now.year &&
+        local.month == now.month &&
+        local.day == now.day;
+
     final hour = local.hour.toString().padLeft(2, '0');
     final minute = local.minute.toString().padLeft(2, '0');
-    final second = local.second.toString().padLeft(2, '0');
+    final time = '$hour:$minute';
 
-    return '$year-$month-$day $hour:$minute:$second';
+    if (isToday) return 'Сегодня, $time';
+
+    final yesterday = now.subtract(const Duration(days: 1));
+    final isYesterday = local.year == yesterday.year &&
+        local.month == yesterday.month &&
+        local.day == yesterday.day;
+    if (isYesterday) return 'Вчера, $time';
+
+    final months = [
+      '', 'янв', 'фев', 'мар', 'апр', 'мая',
+      'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+    ];
+    return '${local.day} ${months[local.month]} ${local.year}, $time';
   }
 
   Color _typeColor(String type) {
     final normalized = type.toUpperCase();
-    if (normalized == 'CREDIT') {
-      return Colors.green;
-    }
-    if (normalized == 'DEBIT') {
-      return Colors.red;
-    }
-    return Colors.blueGrey;
+    if (normalized == 'CREDIT') return const Color(0xFF4CAF50);
+    if (normalized == 'DEBIT') return const Color(0xFFEF5350);
+    return const Color(0xFF78909C);
+  }
+
+  IconData _typeIcon(String type) {
+    final normalized = type.toUpperCase();
+    if (normalized == 'CREDIT') return Icons.arrow_downward_rounded;
+    if (normalized == 'DEBIT') return Icons.arrow_upward_rounded;
+    return Icons.swap_horiz_rounded;
+  }
+
+  String _typeLabel(String type) {
+    final normalized = type.toUpperCase();
+    if (normalized == 'CREDIT') return 'Зачисление';
+    if (normalized == 'DEBIT') return 'Списание';
+    return type;
+  }
+
+  String _formatAmount(String amount, String type) {
+    final normalized = type.toUpperCase();
+    final prefix = normalized == 'CREDIT' ? '+' : '-';
+    return '$prefix $amount';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Account ${widget.accountId} History')),
-      body: SafeArea(child: _buildBody()),
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text('История операций'),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildAccountHeader(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1565C0).withValues(alpha: 0.2),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
+              color: Colors.white,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Счёт',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '•••• ${widget.accountId}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${_history.length} оп.',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1565C0)),
+        ),
+      );
     }
 
     if (_errorMessage != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF5350).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.cloud_off_outlined,
+                  color: Color(0xFFEF5350),
+                  size: 32,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Не удалось загрузить историю',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
               Text(
                 _errorMessage!,
-                style: const TextStyle(color: Colors.red),
                 textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
               ),
-              const SizedBox(height: 12),
-              ElevatedButton(
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
                 onPressed: _loadHistory,
-                child: const Text('Retry'),
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Повторить'),
               ),
             ],
           ),
@@ -122,13 +264,41 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
     }
 
     if (_history.isEmpty) {
-      return const Center(child: Text('No transactions'));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 48,
+              color: Colors.white.withValues(alpha: 0.2),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Нет операций',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Операции появятся после первого перевода',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.white.withValues(alpha: 0.3),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     return RefreshIndicator(
       onRefresh: _loadHistory,
+      color: const Color(0xFF1565C0),
       child: ListView.builder(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         itemCount: _history.length,
         itemBuilder: (context, index) {
           final item = _history[index];
@@ -138,30 +308,58 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
           final timestamp = _formatTimestamp(_field(item, 'timestamp'));
           final color = _typeColor(type);
 
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            child: ListTile(
-              title: Text('Type: $type'),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text('Date & time: $timestamp'),
-                  const SizedBox(height: 4),
-                  RichText(
-                    text: TextSpan(
-                      style: DefaultTextStyle.of(context).style,
-                      children: <InlineSpan>[
-                        const TextSpan(text: 'Amount: '),
-                        TextSpan(
-                          text: amount,
-                          style: TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.w700,
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF162038),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.06),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(_typeIcon(type), color: color, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _typeLabel(type),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
                           ),
                         ),
-                        TextSpan(text: ' $currency'),
+                        const SizedBox(height: 4),
+                        Text(
+                          timestamp,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white.withValues(alpha: 0.4),
+                          ),
+                        ),
                       ],
+                    ),
+                  ),
+                  Text(
+                    '${_formatAmount(amount, type)} $currency',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: color,
                     ),
                   ),
                 ],

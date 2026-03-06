@@ -18,6 +18,7 @@ public class TransferLimitService {
     private static final BigDecimal DAILY_LIMIT = new BigDecimal("100000");
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final String LIMIT_KEY_PREFIX = "limit:daily:";
+    private static final String SYSTEM_USER_ID = "SYSTEM";
 
     private final RedissonClient redissonClient;
 
@@ -31,6 +32,10 @@ public class TransferLimitService {
         }
         if (amount == null || amount.signum() <= 0) {
             throw new IllegalArgumentException("amount must be positive");
+        }
+
+        if (SYSTEM_USER_ID.equals(userId)) {
+            return;
         }
 
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);

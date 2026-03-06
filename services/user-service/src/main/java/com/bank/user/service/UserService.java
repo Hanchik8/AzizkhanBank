@@ -33,6 +33,14 @@ public class UserService {
     }
 
     private String normalizePhone(String phoneNumber) {
-        return phoneNumber.trim();
+        String cleaned = phoneNumber.trim()
+            .replaceAll("[\\s\\-()]+", "");
+        if (cleaned.startsWith("8") && cleaned.length() == 11) {
+            cleaned = "+7" + cleaned.substring(1);
+        }
+        if (!cleaned.startsWith("+")) {
+            cleaned = "+" + cleaned;
+        }
+        return cleaned;
     }
 }

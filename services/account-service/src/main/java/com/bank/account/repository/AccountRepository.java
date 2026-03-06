@@ -3,6 +3,7 @@ package com.bank.account.repository;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -26,10 +27,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
     @Query("select a from Account a where a.clientId = :clientId")
     List<Account> findAllByClientId(@Param("clientId") String clientId);
 
-    @Query(value = "select * from accounts where status = :status", nativeQuery = true)
-    List<Account> findAllByStatus(@Param("status") String status);
+    @Query("select a from Account a where a.status = :status")
+    List<Account> findAllByStatus(@Param("status") String status, Pageable pageable);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("UPDATE Account a SET a.status = 'FROZEN' WHERE a.clientId = :clientId")
     void freezeAccountsByClientId(@Param("clientId") String clientId);

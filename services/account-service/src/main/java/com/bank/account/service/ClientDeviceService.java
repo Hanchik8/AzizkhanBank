@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.Optional;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,12 +25,18 @@ import org.springframework.util.StringUtils;
 public class ClientDeviceService {
 
     private static final Duration MAX_DPOP_REQUEST_AGE = Duration.ofMinutes(5);
+    private static final String NONCE_KEY_PREFIX = "dpop:nonce:";
 
     private final ClientDeviceRepository clientDeviceRepository;
+    private final StringRedisTemplate redisTemplate;
     private final Clock clock;
 
-    public ClientDeviceService(ClientDeviceRepository clientDeviceRepository) {
+    public ClientDeviceService(
+        ClientDeviceRepository clientDeviceRepository,
+        StringRedisTemplate redisTemplate
+    ) {
         this.clientDeviceRepository = clientDeviceRepository;
+        this.redisTemplate = redisTemplate;
         this.clock = Clock.systemUTC();
     }
 
@@ -78,6 +85,15 @@ public class ClientDeviceService {
         Instant now = Instant.now(clock);
         if (requestTimestamp.isBefore(now.minus(MAX_DPOP_REQUEST_AGE))) {
             return DpopVerificationResult.failure(HttpStatus.UNAUTHORIZED, "DPoP timestamp is older than 5 minutes");
+        }
+        if (requestTimestamp.isAfter(now.plus(Duration.ofSeconds(30)))) {
+            return DpopVerificationResult.failure(HttpStatus.BAD_REQUEST, "DPoP timestamp is in the future");
+        }
+
+        String nonceKey = NONCE_KEY_PREFIX + signatureHeader.substring(0, Math.min(signatureHeader.length(), 64));
+        Boolean isNew = redisTemplate.opsForValue().setIfAbsent(nonceKey, "1", MAX_DPOP_REQUEST_AGE);
+        if (Boolean.FALSE.equals(isNew)) {
+            return DpopVerificationResult.failure(HttpStatus.UNAUTHORIZED, "DPoP signature replay detected");
         }
 
         Optional<ClientDevice> clientDeviceOptional = clientDeviceRepository.findByDeviceId(deviceIdHeader);

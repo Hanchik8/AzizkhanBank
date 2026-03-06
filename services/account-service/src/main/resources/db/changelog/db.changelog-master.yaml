@@ -1,13 +1,6 @@
 databaseChangeLog:
-  - changeSet:
-      id: 0001-core-ledger-schema
-      author: platform
-      changes:
-        - sqlFile:
-            dbms: postgresql
-            encoding: UTF-8
-            path: 0001-core-ledger-schema.sql
-            relativeToChangelogFile: true
+  - include:
+      file: db/changelog/0002-create-client-devices.yaml
   - changeSet:
       id: 0003-system-account
       author: platform

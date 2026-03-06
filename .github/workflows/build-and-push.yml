@@ -50,8 +50,11 @@ jobs:
       matrix:
         service:
           - user-service
+          - auth-service
           - account-service
+          - gateway-service
           - notification-service
+          - fraud-service
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +98,7 @@ jobs:
             -f services/${{ matrix.service }}/Dockerfile \
             -t ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag_sha }} \
             -t ${{ steps.meta.outputs.image }}:latest \
-            services/${{ matrix.service }}
+            .
 
       - name: Push Docker image
         run: |

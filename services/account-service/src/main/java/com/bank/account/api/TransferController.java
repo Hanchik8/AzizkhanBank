@@ -37,7 +37,7 @@ public class TransferController {
         @RequestHeader(name = "Idempotency-Key") @NotBlank String idempotencyKey,
         @Valid @RequestBody TransferFundsRequest request
     ) {
-        String userId = resolveUserId(jwt);
+        String userId = JwtUtils.requireUserId(jwt);
         TransferCommand command = new TransferCommand(
             userId,
             idempotencyKey,
@@ -59,16 +59,4 @@ public class TransferController {
         return ResponseEntity.created(location).body(response);
     }
 
-    private String resolveUserId(Jwt jwt) {
-        if (jwt == null) {
-            throw new IllegalArgumentException("Authenticated JWT is required");
-        }
-
-        String subject = jwt.getSubject();
-        if (subject == null || subject.isBlank()) {
-            throw new IllegalArgumentException("JWT subject (userId) is required");
-        }
-
-        return subject;
-    }
 }

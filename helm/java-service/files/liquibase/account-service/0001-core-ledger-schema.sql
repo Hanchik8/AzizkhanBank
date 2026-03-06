@@ -13,7 +13,7 @@ CREATE TABLE accounts (
   CONSTRAINT chk_accounts_balance_non_negative CHECK (balance >= 0),
   CONSTRAINT chk_accounts_version_non_negative CHECK (version >= 0),
   CONSTRAINT chk_accounts_currency_iso CHECK (currency ~ '^[A-Z]{3}$'),
-  CONSTRAINT chk_accounts_status CHECK (status IN ('ACTIVE', 'BLOCKED', 'CLOSED')),
+  CONSTRAINT chk_accounts_status CHECK (status IN ('ACTIVE', 'BLOCKED', 'CLOSED', 'FROZEN')),
   CONSTRAINT chk_accounts_timestamp_order CHECK (updated_at >= created_at)
 );
 
@@ -75,7 +75,7 @@ CREATE TABLE ledger_entries (
   CONSTRAINT chk_ledger_entries_currency_iso CHECK (currency ~ '^[A-Z]{3}$')
 );
 
-CREATE UNIQUE INDEX uq_ledger_entries_transfer_account_type
+CREATE INDEX idx_ledger_entries_transfer_account_type
   ON ledger_entries (transfer_id, account_id, entry_type);
 CREATE INDEX idx_ledger_entries_account_created_at
   ON ledger_entries (account_id, created_at DESC);

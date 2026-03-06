@@ -5,9 +5,11 @@ COPY . .
 RUN mvn -B -ntp -f services/notification-service/pom.xml -DskipTests package
 
 FROM eclipse-temurin:21-jre
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 WORKDIR /app
 
 COPY --from=build /workspace/services/notification-service/target/notification-service-0.0.1-SNAPSHOT.jar /app/app.jar
 
+USER appuser
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

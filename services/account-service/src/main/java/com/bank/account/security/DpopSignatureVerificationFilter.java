@@ -43,7 +43,16 @@ public class DpopSignatureVerificationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String uri = request.getRequestURI();
-        return !(uri.equals("/api/v1/transfers") || uri.startsWith("/api/v1/transfers/"));
+        if (!isProtectedPath(uri)) {
+            return true;
+        }
+        return "GET".equalsIgnoreCase(request.getMethod());
+    }
+
+    private static boolean isProtectedPath(String uri) {
+        return uri.startsWith("/api/v1/transfers")
+            || uri.startsWith("/api/v1/accounts")
+            || uri.startsWith("/api/v1/devices");
     }
 
     @Override

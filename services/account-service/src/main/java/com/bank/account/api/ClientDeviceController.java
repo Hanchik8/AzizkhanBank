@@ -8,11 +8,11 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.StringUtils;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,12 +29,11 @@ public class ClientDeviceController {
 
     @PostMapping
     public ResponseEntity<DeviceRegistrationResponse> registerDevice(
-        @RequestHeader(name = "X-User-Id", required = false) String userId,
+        @AuthenticationPrincipal Jwt jwt,
         @Valid @RequestBody DeviceRegistrationRequest request
     ) {
-        String resolvedUserId = StringUtils.hasText(userId) ? userId.trim() : "anonymous";
         ClientDevice clientDevice = clientDeviceService.registerDevice(
-            resolvedUserId,
+            JwtUtils.requireUserId(jwt),
             request.deviceId(),
             request.publicKey()
         );

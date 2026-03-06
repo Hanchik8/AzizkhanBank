@@ -28,6 +28,12 @@ public class JwtService {
         @Value("${auth.jwt.access-expiration-minutes:15}") long accessExpirationMinutes,
         @Value("${auth.jwt.refresh-expiration-minutes:43200}") long refreshExpirationMinutes
     ) {
+        if (secret == null || secret.isBlank() || secret.startsWith("change-this")) {
+            throw new IllegalStateException(
+                "JWT_SECRET must be set to a strong secret (at least 32 bytes). "
+                + "Never use the default placeholder in production."
+            );
+        }
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.registrationExpiration = Duration.ofMinutes(registrationExpirationMinutes);
         this.accessExpiration = Duration.ofMinutes(accessExpirationMinutes);
@@ -81,6 +87,33 @@ public class JwtService {
             throw new UnauthorizedException("Invalid token payload");
         } catch (JwtException ex) {
             throw new UnauthorizedException("Invalid or expired token");
+        }
+    }
+
+    public TokenPair refreshAccessToken(String refreshTokenRaw) {
+        String token = refreshTokenRaw.trim();
+        try {
+            var claims = Jwts.parser()
+                .verifyWith(signingKey)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+            String tokenType = claims.get("tokenType", String.class);
+            if (!"REFRESH".equals(tokenType)) {
+                throw new UnauthorizedException("Token must be a refresh token");
+            }
+
+            String userIdStr = claims.getSubject();
+            String deviceId = claims.get("deviceId", String.class);
+            if (!StringUtils.hasText(userIdStr) || !StringUtils.hasText(deviceId)) {
+                throw new UnauthorizedException("Invalid refresh token claims");
+            }
+
+            UUID userId = UUID.fromString(userIdStr);
+            return generateFinalTokenPair(userId, deviceId);
+        } catch (JwtException ex) {
+            throw new UnauthorizedException("Invalid or expired refresh token");
         }
     }
 

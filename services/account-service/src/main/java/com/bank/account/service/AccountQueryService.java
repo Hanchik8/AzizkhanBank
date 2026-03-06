@@ -2,6 +2,9 @@ package com.bank.account.service;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +17,8 @@ import com.bank.account.repository.LedgerEntryRepository;
 
 @Service
 public class AccountQueryService {
+
+    private static final int DEFAULT_PAGE_SIZE = 50;
 
     private final AccountRepository accountRepository;
     private final LedgerEntryRepository ledgerEntryRepository;
@@ -36,6 +41,28 @@ public class AccountQueryService {
                 account.getStatus()
             ))
             .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionHistoryResponse> getAccountHistory(String userId, Long accountId, int page, int size) {
+        Account account = accountRepository.findById(accountId)
+            .orElseThrow(() -> new IllegalArgumentException("Account not found"));
+
+        if (!account.getClientId().equals(userId)) {
+            throw new AccessDeniedException("Account does not belong to authenticated user");
+        }
+
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        Pageable pageable = PageRequest.of(Math.max(page, 0), safeSize);
+
+        return ledgerEntryRepository.findByAccountIdOrderByCreatedAtDesc(accountId, pageable)
+            .map(entry -> new TransactionHistoryResponse(
+                entry.getTransferId(),
+                entry.getAmount(),
+                entry.getCurrency(),
+                entry.getEntryType().name(),
+                entry.getCreatedAt()
+            ));
     }
 
     @Transactional(readOnly = true)

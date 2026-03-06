@@ -11,3 +11,14 @@ app:
     topics:
       outbox-events: account.events.v1
       fraud-alerts: fraud.alerts
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never

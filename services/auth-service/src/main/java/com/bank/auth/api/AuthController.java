@@ -4,6 +4,7 @@ import com.bank.auth.service.DeviceBindingService;
 import com.bank.auth.service.JwtService;
 import com.bank.auth.service.OtpService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -18,10 +19,12 @@ public class AuthController {
 
     private final OtpService otpService;
     private final DeviceBindingService deviceBindingService;
+    private final JwtService jwtService;
 
-    public AuthController(OtpService otpService, DeviceBindingService deviceBindingService) {
+    public AuthController(OtpService otpService, DeviceBindingService deviceBindingService, JwtService jwtService) {
         this.otpService = otpService;
         this.deviceBindingService = deviceBindingService;
+        this.jwtService = jwtService;
     }
 
     @PostMapping("/send-otp")
@@ -42,15 +45,18 @@ public class AuthController {
         @Valid @RequestBody DeviceBindRequest request
     ) {
         JwtService.TokenPair tokenPair = deviceBindingService.bindDevice(
-            authorizationHeader,
-            request.deviceId(),
-            request.publicKey()
+            authorizationHeader, request.deviceId(), request.publicKey()
         );
-
         return ResponseEntity.ok(new DeviceBindResponse(
-            tokenPair.accessToken(),
-            tokenPair.refreshToken(),
-            "Bearer"
+            tokenPair.accessToken(), tokenPair.refreshToken(), "Bearer"
+        ));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<DeviceBindResponse> refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+        JwtService.TokenPair tokenPair = jwtService.refreshAccessToken(request.refreshToken());
+        return ResponseEntity.ok(new DeviceBindResponse(
+            tokenPair.accessToken(), tokenPair.refreshToken(), "Bearer"
         ));
     }
 }

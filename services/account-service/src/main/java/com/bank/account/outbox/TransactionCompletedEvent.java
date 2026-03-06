@@ -8,6 +8,7 @@ import com.bank.account.domain.AccountTransaction;
 public record TransactionCompletedEvent(
     String transferId,
     String idempotencyKey,
+    String userId,
     Long fromAccountId,
     Long toAccountId,
     BigDecimal amount,
@@ -15,10 +16,11 @@ public record TransactionCompletedEvent(
     Instant committedAt
 ) {
 
-    public static TransactionCompletedEvent from(AccountTransaction transaction) {
+    public static TransactionCompletedEvent from(AccountTransaction transaction, String userId) {
         return new TransactionCompletedEvent(
             transaction.getTransferId(),
             transaction.getIdempotencyKey(),
+            userId,
             transaction.getFromAccountId(),
             transaction.getToAccountId(),
             transaction.getAmount(),
