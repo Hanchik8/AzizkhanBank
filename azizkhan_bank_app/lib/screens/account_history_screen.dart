@@ -1,4 +1,5 @@
 import 'package:azizkhan_bank_app/api/api_service.dart';
+import 'package:azizkhan_bank_app/ui/bank_ui.dart';
 import 'package:flutter/material.dart';
 
 class AccountHistoryScreen extends StatefulWidget {
@@ -10,12 +11,15 @@ class AccountHistoryScreen extends StatefulWidget {
   State<AccountHistoryScreen> createState() => _AccountHistoryScreenState();
 }
 
+enum _HistoryFilter { all, credit, debit }
+
 class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
   final ApiService _apiService = ApiService();
 
   bool _isLoading = true;
   String? _errorMessage;
-  List<dynamic> _history = <dynamic>[];
+  List<Map<String, dynamic>> _history = <Map<String, dynamic>>[];
+  _HistoryFilter _filter = _HistoryFilter.all;
 
   @override
   void initState() {
@@ -32,7 +36,9 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
     try {
       final history = await _apiService.getAccountHistory(widget.accountId);
       if (!mounted) return;
-      setState(() => _history = history);
+      setState(() {
+        _history = history.whereType<Map<String, dynamic>>().toList();
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _errorMessage = error.toString());
@@ -41,8 +47,7 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
     }
   }
 
-  String _field(dynamic entry, String key, {String fallback = '-'}) {
-    if (entry is! Map<String, dynamic>) return fallback;
+  String _field(Map<String, dynamic> entry, String key, {String fallback = '-'}) {
     return entry[key]?.toString() ?? fallback;
   }
 
@@ -69,17 +74,28 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
     if (isYesterday) return 'Вчера, $time';
 
     final months = [
-      '', 'янв', 'фев', 'мар', 'апр', 'мая',
-      'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+      '',
+      'янв',
+      'фев',
+      'мар',
+      'апр',
+      'мая',
+      'июн',
+      'июл',
+      'авг',
+      'сен',
+      'окт',
+      'ноя',
+      'дек',
     ];
     return '${local.day} ${months[local.month]} ${local.year}, $time';
   }
 
   Color _typeColor(String type) {
     final normalized = type.toUpperCase();
-    if (normalized == 'CREDIT') return const Color(0xFF4CAF50);
-    if (normalized == 'DEBIT') return const Color(0xFFEF5350);
-    return const Color(0xFF78909C);
+    if (normalized == 'CREDIT') return BankColors.success;
+    if (normalized == 'DEBIT') return BankColors.danger;
+    return BankColors.textSecondary;
   }
 
   IconData _typeIcon(String type) {
@@ -102,191 +118,299 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
     return '$prefix $amount';
   }
 
+  double _numericAmount(Map<String, dynamic> entry) {
+    final raw = entry['amount'];
+    if (raw is num) return raw.toDouble();
+    if (raw is String) {
+      return double.tryParse(raw.replaceAll(',', '.')) ?? 0;
+    }
+    return 0;
+  }
+
+  List<Map<String, dynamic>> get _filteredHistory {
+    if (_filter == _HistoryFilter.all) return _history;
+    final expected = _filter == _HistoryFilter.credit ? 'CREDIT' : 'DEBIT';
+    return _history
+        .where((entry) => _field(entry, 'type').toUpperCase() == expected)
+        .toList();
+  }
+
+  String get _incomingTotal {
+    final total = _history
+        .where((entry) => _field(entry, 'type').toUpperCase() == 'CREDIT')
+        .fold<double>(0, (sum, entry) => sum + _numericAmount(entry));
+    return total.toStringAsFixed(2);
+  }
+
+  String get _outgoingTotal {
+    final total = _history
+        .where((entry) => _field(entry, 'type').toUpperCase() == 'DEBIT')
+        .fold<double>(0, (sum, entry) => sum + _numericAmount(entry));
+    return total.toStringAsFixed(2);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: const Text('История операций'),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildAccountHeader(),
-            Expanded(child: _buildBody()),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAccountHeader() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1565C0), Color(0xFF0D47A1)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1565C0).withValues(alpha: 0.2),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
+      body: Stack(
         children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.account_balance_wallet_outlined,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Счёт',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w500,
-                  ),
+          const BankBackdrop(),
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: _loadHistory,
+              color: BankColors.primary,
+              child: ListView(
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '•••• ${widget.accountId}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '${_history.length} оп.',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                children: [
+                  _buildTopBar(),
+                  const SizedBox(height: 20),
+                  _buildAccountHeader(),
+                  const SizedBox(height: 20),
+                  _buildFilterChips(),
+                  const SizedBox(height: 20),
+                  _buildBody(),
+                ],
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Row(
+      children: [
+        BankSoftIconButton(
+          icon: Icons.arrow_back_ios_new_rounded,
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'История операций',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: BankColors.textPrimary,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'Просмотр начислений и списаний по выбранному счёту.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: BankColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountHeader() {
+    return BankSurfaceCard(
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [BankColors.heroStart, BankColors.heroEnd],
+      ),
+      borderColor: Colors.white.withValues(alpha: 0.08),
+      radius: 32,
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Счёт •••• ${widget.accountId}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryMetric(
+                  label: 'Операций',
+                  value: _history.length.toString(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSummaryMetric(
+                  label: 'Зачисления',
+                  value: _incomingTotal,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildSummaryMetric(
+            label: 'Списания',
+            value: _outgoingTotal,
+            fullWidth: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryMetric({
+    required String label,
+    required String value,
+    bool fullWidth = false,
+  }) {
+    return Container(
+      width: fullWidth ? double.infinity : null,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.72),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChips() {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _buildFilterChip(_HistoryFilter.all, 'Все'),
+        _buildFilterChip(_HistoryFilter.credit, 'Зачисления'),
+        _buildFilterChip(_HistoryFilter.debit, 'Списания'),
+      ],
+    );
+  }
+
+  Widget _buildFilterChip(_HistoryFilter filter, String label) {
+    return ChoiceChip(
+      selected: _filter == filter,
+      label: Text(label),
+      onSelected: (_) => setState(() => _filter = filter),
     );
   }
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1565C0)),
-        ),
-      );
-    }
-
-    if (_errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF5350).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.cloud_off_outlined,
-                  color: Color(0xFFEF5350),
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Не удалось загрузить историю',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _errorMessage!,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.white.withValues(alpha: 0.5),
-                ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: _loadHistory,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Повторить'),
-              ),
-            ],
+      return const Padding(
+        padding: EdgeInsets.only(top: 48),
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2.4,
+            valueColor: AlwaysStoppedAnimation<Color>(BankColors.primary),
           ),
         ),
       );
     }
 
-    if (_history.isEmpty) {
-      return Center(
+    if (_errorMessage != null) {
+      return BankSurfaceCard(
+        radius: 28,
+        padding: const EdgeInsets.all(24),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: BankColors.dangerSoft,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.cloud_off_rounded,
+                color: BankColors.danger,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Не удалось загрузить историю',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 13,
+                color: BankColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 18),
+            ElevatedButton.icon(
+              onPressed: _loadHistory,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Повторить'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_filteredHistory.isEmpty) {
+      return BankSurfaceCard(
+        radius: 28,
+        padding: const EdgeInsets.all(24),
+        child: const Column(
           children: [
             Icon(
               Icons.receipt_long_outlined,
               size: 48,
-              color: Colors.white.withValues(alpha: 0.2),
+              color: BankColors.textTertiary,
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Text(
-              'Нет операций',
+              'Операций не найдено',
               style: TextStyle(
-                fontSize: 16,
-                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 4),
+            SizedBox(height: 8),
             Text(
-              'Операции появятся после первого перевода',
+              'Смените фильтр или выполните перевод, чтобы здесь появились записи.',
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.white.withValues(alpha: 0.3),
+                color: BankColors.textSecondary,
+                height: 1.5,
               ),
             ),
           ],
@@ -294,80 +418,66 @@ class _AccountHistoryScreenState extends State<AccountHistoryScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadHistory,
-      color: const Color(0xFF1565C0),
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        itemCount: _history.length,
-        itemBuilder: (context, index) {
-          final item = _history[index];
-          final amount = _field(item, 'amount');
-          final currency = _field(item, 'currency');
-          final type = _field(item, 'type').toUpperCase();
-          final timestamp = _formatTimestamp(_field(item, 'timestamp'));
-          final color = _typeColor(type);
+    return Column(
+      children: _filteredHistory.map((item) {
+        final amount = _field(item, 'amount');
+        final currency = _field(item, 'currency');
+        final type = _field(item, 'type').toUpperCase();
+        final timestamp = _formatTimestamp(_field(item, 'timestamp'));
+        final color = _typeColor(type);
 
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF162038),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.06),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: BankSurfaceCard(
+            radius: 26,
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(_typeIcon(type), color: color, size: 24),
                 ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(_typeIcon(type), color: color, size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _typeLabel(type),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _typeLabel(type),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: BankColors.textPrimary,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          timestamp,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white.withValues(alpha: 0.4),
-                          ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        timestamp,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: BankColors.textSecondary,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  Text(
-                    '${_formatAmount(amount, type)} $currency',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: color,
-                    ),
+                ),
+                Text(
+                  '${_formatAmount(amount, type)} $currency',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: color,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 }

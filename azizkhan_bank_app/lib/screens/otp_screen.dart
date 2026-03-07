@@ -1,8 +1,10 @@
 import 'package:azizkhan_bank_app/api/api_service.dart';
 import 'package:azizkhan_bank_app/crypto/crypto_service.dart';
 import 'package:azizkhan_bank_app/screens/home_screen.dart';
+import 'package:azizkhan_bank_app/ui/bank_ui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
@@ -28,6 +30,7 @@ class _OtpScreenState extends State<OtpScreen>
 
   late final AnimationController _animController;
   late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
 
   bool _isLoading = false;
   String? _errorMessage;
@@ -43,6 +46,15 @@ class _OtpScreenState extends State<OtpScreen>
       parent: _animController,
       curve: Curves.easeOut,
     );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.05),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _animController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
     _animController.forward();
   }
 
@@ -56,7 +68,7 @@ class _OtpScreenState extends State<OtpScreen>
   Future<void> _verifyOtpAndBindDevice() async {
     final otpCode = _otpController.text.trim();
     if (otpCode.isEmpty) {
-      setState(() => _errorMessage = 'Введите код подтверждения');
+      setState(() => _errorMessage = 'Введите код подтверждения.');
       return;
     }
 
@@ -95,12 +107,17 @@ class _OtpScreenState extends State<OtpScreen>
           transitionsBuilder: (_, animation, __, child) {
             return FadeTransition(opacity: animation, child: child);
           },
-          transitionDuration: const Duration(milliseconds: 500),
+          transitionDuration: const Duration(milliseconds: 450),
         ),
         (route) => false,
       );
     } on DioException catch (error) {
-      setState(() => _errorMessage = ApiService.resolveDioMessage(error));
+      setState(
+        () => _errorMessage = ApiService.resolveDioMessage(
+          error,
+          fallback: 'Не удалось подтвердить код.',
+        ),
+      );
     } catch (error) {
       setState(() => _errorMessage = error.toString());
     } finally {
@@ -114,88 +131,83 @@ class _OtpScreenState extends State<OtpScreen>
     return '${phone.substring(0, phone.length - 4)}****';
   }
 
+  Future<void> _resendOtp() async {
+    try {
+      await _apiService.sendOtp(widget.phoneNumber);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Код отправлен повторно.'),
+          backgroundColor: BankColors.success,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Не удалось отправить код повторно.'),
+          backgroundColor: BankColors.danger,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                _buildHeader(),
-                const SizedBox(height: 40),
-                _buildOtpField(),
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 12),
-                  _buildErrorMessage(),
-                ],
-                const SizedBox(height: 24),
-                _buildVerifyButton(),
-                const SizedBox(height: 20),
-                _buildResendHint(),
-                const Spacer(),
-                _buildSecurityNote(),
-                const SizedBox(height: 24),
-              ],
+      body: Stack(
+        children: [
+          const BankBackdrop(),
+          SafeArea(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                  children: [
+                    _buildTopBar(),
+                    const SizedBox(height: 20),
+                    _buildCodeCard(),
+                    const SizedBox(height: 16),
+                    _buildSecurityNote(),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildTopBar() {
+    return Row(
       children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1565C0).withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Icon(
-            Icons.lock_outline,
-            color: Color(0xFF1565C0),
-            size: 28,
-          ),
+        BankSoftIconButton(
+          icon: Icons.arrow_back_ios_new_rounded,
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        const SizedBox(height: 24),
-        const Text(
-          'Подтверждение',
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            height: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        RichText(
-          text: TextSpan(
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.white.withValues(alpha: 0.55),
-              height: 1.5,
-            ),
+        const SizedBox(width: 12),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const TextSpan(text: 'Код отправлен на номер\n'),
-              TextSpan(
-                text: _maskedPhone(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
+              Text(
+                'Подтверждение входа',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: BankColors.textPrimary,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'Подтвердите номер телефона одноразовым кодом.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: BankColors.textSecondary,
+                  height: 1.45,
                 ),
               ),
             ],
@@ -205,52 +217,111 @@ class _OtpScreenState extends State<OtpScreen>
     );
   }
 
-  Widget _buildOtpField() {
-    return TextField(
-      controller: _otpController,
-      keyboardType: TextInputType.number,
-      maxLength: 6,
-      textAlign: TextAlign.center,
-      style: const TextStyle(
-        fontSize: 28,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 12,
-      ),
-      decoration: InputDecoration(
-        counterText: '',
-        hintText: '------',
-        hintStyle: TextStyle(
-          fontSize: 28,
-          letterSpacing: 12,
-          color: Colors.white.withValues(alpha: 0.15),
-        ),
-      ),
-      onSubmitted: (_) => _verifyOtpAndBindDevice(),
-    );
-  }
-
-  Widget _buildErrorMessage() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEF5350).withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFEF5350).withValues(alpha: 0.3),
-        ),
-      ),
-      child: Row(
+  Widget _buildCodeCard() {
+    return BankSurfaceCard(
+      radius: 30,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline, color: Color(0xFFEF5350), size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              _errorMessage!,
-              style: const TextStyle(
-                color: Color(0xFFEF5350),
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+          const Text(
+            'Код из SMS',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+              color: BankColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Мы отправили код на номер ${_maskedPhone()}.',
+            style: const TextStyle(
+              fontSize: 14,
+              color: BankColors.textSecondary,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _otpController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 10,
+            ),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: '------',
+              hintStyle: TextStyle(
+                letterSpacing: 10,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: BankColors.textTertiary.withValues(alpha: 0.7),
               ),
+            ),
+            onSubmitted: (_) => _verifyOtpAndBindDevice(),
+          ),
+          if (_errorMessage != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: BankColors.dangerSoft,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: BankColors.danger,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        color: BankColors.danger,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          ElevatedButton(
+            onPressed: _isLoading ? null : _verifyOtpAndBindDevice,
+            child: _isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.verified_user_outlined, size: 20),
+                      SizedBox(width: 8),
+                      Text('Подтвердить'),
+                    ],
+                  ),
+          ),
+          const SizedBox(height: 10),
+          Center(
+            child: TextButton(
+              onPressed: _resendOtp,
+              child: const Text('Отправить код повторно'),
             ),
           ),
         ],
@@ -258,85 +329,47 @@ class _OtpScreenState extends State<OtpScreen>
     );
   }
 
-  Widget _buildVerifyButton() {
-    return ElevatedButton(
-      onPressed: _isLoading ? null : _verifyOtpAndBindDevice,
-      child: _isLoading
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            )
-          : const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.verified_user_outlined, size: 20),
-                SizedBox(width: 8),
-                Text('Подтвердить'),
-              ],
-            ),
-    );
-  }
-
-  Future<void> _resendOtp() async {
-    try {
-      await _apiService.sendOtp(widget.phoneNumber);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Код отправлен повторно'),
-          backgroundColor: Color(0xFF4CAF50),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Не удалось отправить код'),
-          backgroundColor: Color(0xFFEF5350),
-        ),
-      );
-    }
-  }
-
-  Widget _buildResendHint() {
-    return Center(
-      child: TextButton(
-        onPressed: _resendOtp,
-        child: const Text('Отправить код повторно'),
-      ),
-    );
-  }
-
   Widget _buildSecurityNote() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFD4A843).withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: const Color(0xFFD4A843).withValues(alpha: 0.15),
-        ),
-      ),
+    return BankSurfaceCard(
+      radius: 28,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.shield_outlined,
-            color: const Color(0xFFD4A843).withValues(alpha: 0.7),
-            size: 20,
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: BankColors.warningSoft,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: BankColors.warning,
+            ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Устройство будет привязано к вашему аккаунту для безопасных операций',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.white.withValues(alpha: 0.45),
-                height: 1.4,
-              ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Привязка устройства',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: BankColors.textPrimary,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'После проверки кодом устройство будет связано с аккаунтом для безопасных операций.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: BankColors.textSecondary,
+                    height: 1.45,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
